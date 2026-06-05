@@ -1,0 +1,12 @@
+{"properties": [
+  {
+    "name": "app.kafka.topic",
+    "type": "java.lang.String",
+    "description": "Kafka topic name"
+  },
+  {
+    "name": "app.telemetry.events-per-tick",
+    "type": "java.lang.Integer",
+    "description": "Number of events to be published per tick."
+  }
+]}

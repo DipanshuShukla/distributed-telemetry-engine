@@ -1,0 +1,4 @@
+machine_id,scenario,base_temperature,base_velocity,base_flux,base_power,base_pressure
+reactor-01,rayleigh_benard,350.0,12.5,0.0,500.0,101.3
+reactor-02,MHD_64,400.0,15.0,8.4,1200.0,110.5
+reactor-03,rayleigh_taylor,380.0,10.0,0.0,800.0,150.8

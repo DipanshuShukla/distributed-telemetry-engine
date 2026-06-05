@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: telemetry-generator-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+app:
+  kafka:
+    topic: raw-telemetry
+  telemetry:
+    events-per-tick: ${EVENTS_PER_TICK:50}
