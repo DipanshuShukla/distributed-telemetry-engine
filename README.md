@@ -16,32 +16,41 @@ The system is decoupled into discrete microservices communicating via an Apache 
 
 ## 🛠️ Technology Stack
 
-* **Core Backend:** Java 26, Spring Boot 4.0.6, Spring Data JPA, Spring Kafka
-* **Message Broker:** Apache Kafka (KRaft Mode - ZooKeeper-less)
+* **Core Backend:** Java 21, Spring Boot 3.2, Spring Data JPA, Spring Kafka
+* **Message Broker:** Apache Kafka 3.6 (KRaft Mode - ZooKeeper-less)
 * **High-Speed Cache & State:** Redis 7 (ZSets and Hashes)
 * **Relational Storage:** PostgreSQL 15
 * **Orchestration:** Docker & Docker Compose V2
 * **Visualization:** HTML5, Vanilla JavaScript, Chart.js
 
-## 🧠 Key Architectural Decisions
+## 🧠 Key Architectural Decisions & Trade-offs
 
 ### 1. High-Throughput Micro-Batching
-Processing thousands of events per second one-by-one crushes database connection pools. The consumer is configured to poll `List<ConsumerRecord>` in chunks of 500. This transforms 500 individual network trips to PostgreSQL into a single bulk `INSERT`, allowing a single local node to comfortably process ~1,000 EPS.
+Processing thousands of events per second one-by-one crushes database connection pools. The consumer is configured to poll `List<ConsumerRecord>` in chunks. This transforms individual network trips to PostgreSQL into a single bulk `INSERT`, allowing a single local node to comfortably process ~3,500+ EPS.
 
 ### 2. Stateful Signal Debouncing (Anti-Alarm Fatigue)
-Industrial sensors vibrate and produce dirty data. To prevent false-positive anomaly alerts, the system uses Redis to track consecutive threshold breaches. An anomaly is only logged to the database if the sensor breaches the safety limit for **3 consecutive readings**, acting as a distributed debounce filter.
+Industrial sensors vibrate and produce dirty data. To prevent false-positive anomaly alerts, the system uses Redis to track consecutive threshold breaches. An anomaly is only logged if the sensor breaches the safety limit for **3 consecutive readings**, acting as a distributed debounce filter.
+* **Trade-off:** Why not store this state in Java memory? Because in a scaled environment with multiple processor instances, state must be centralized. Redis handles this with sub-millisecond latency.
 
-### 3. $O(1)$ Live Chart Snapshotting (Metrics Masking Prevention)
-Rather than querying the SQL database for live chart data or sending thousands of events over HTTP, the processor updates a single Redis key with the *most critical* reading from the current batch. This decouples the visualization layer from the ingestion volume, keeping dashboard rendering lightweight and instant.
+### 3. $O(1)$ Live Chart Snapshotting vs. WebSockets
+Rather than querying the SQL database for live chart data or establishing heavy WebSocket connections for thousands of events, the processor updates a single Redis key with the *most critical* reading from the current batch. 
+* **Trade-off:** While WebSockets offer true real-time pushing, a 1-second REST polling interval against a flat Redis String provides a highly resilient, visually identical "live" experience while drastically reducing server memory overhead and architectural complexity.
 
 ### 4. Client-Side Heartbeat Monitoring
-Redis tracks active machines using a timestamp. Instead of running heavy background cron jobs to delete offline machines, the API simply passes the timestamp to the frontend. The client evaluates `(CurrentTime - LastSeen) < 10s` to instantly render devices as Online or Offline.
+Redis tracks active machines using a timestamp. Instead of running heavy background cron jobs on the server to delete offline machines, the API simply passes the timestamp to the frontend. The client evaluates `(CurrentTime - LastSeen) < 10s` to instantly render devices as Online or Offline.
+
+## 📋 Assumptions & Constraints
+
+Given the limited time-box for this assignment, the following pragmatic assumptions were made:
+* **Simulated Inference:** Real-world ML anomaly detection requires heavy Python/TensorFlow models. For this assignment, the "AI Engine" is mocked using strict, physics-based conditional thresholds applied to the telemetry stream.
+* **Security & Auth:** JWT authentication and SSL termination were omitted to focus entirely on the distributed systems and data engineering challenges.
+* **Single-Node Deployment:** While the `docker-compose.yml` simulates a multi-node network locally, production would utilize Kubernetes (EKS/GKE) for true isolation.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 * Docker and Docker Compose (V2)
-* Java 21 (Optional, if running services outside of Docker)
+* Ports `80`, `8080`, `5432`, `6379`, `9092` available on your local host.
 
 ### Launching the Stack
 The entire infrastructure and microservices are containerized. From the root directory, execute:
@@ -54,10 +63,10 @@ docker compose up -d --build
 
 ### Viewing the Application
 
-* **Industrial Dashboard:** Open `http://localhost:8080/index.html` in your browser.
+* **Industrial Dashboard:** Open `http://localhost/index.html` (via Nginx Proxy)
 * **Service APIs:**
-* Metrics: `GET http://localhost:8080/api/telemetry/cluster-metrics`
-* Anomalies: `GET http://localhost:8080/api/telemetry/recent-anomalies`
+* Metrics: `GET http://localhost/api/telemetry/cluster-metrics`
+* Anomalies: `GET http://localhost/api/telemetry/recent-anomalies`
 
 
 
@@ -76,6 +85,6 @@ PROCESSOR_REPLICAS=3 GENERATOR_RATE=200 docker compose up -d
 
 Given a longer development runway, the next immediate architectural upgrades would be:
 
-1. **Service Discovery:** Integrating **HashiCorp Consul** (`spring-cloud-starter-consul-discovery`) to dynamically register processor nodes as they scale up and down.
-2. **API Gateway:** Deploying an NGINX Reverse Proxy or Spring Cloud Gateway to act as a single entry point and load-balance frontend REST requests across the active processor replicas.
-3. **Time-Series Database:** Migrating historical logs from standard PostgreSQL to TimescaleDB or InfluxDB for optimized time-window querying.
+1. **Infrastructure Monitoring (Consumer Lag):** Deploying Prometheus and Grafana with Kafka JMX exporters to strictly monitor partition offsets, consumer lag, and producer ingress rates at the infrastructure level.
+2. **Service Discovery:** Integrating **HashiCorp Consul** to dynamically register processor nodes as they scale up and down.
+3. **Time-Series Database:** Migrating historical logs from standard PostgreSQL to TimescaleDB or InfluxDB for highly optimized time-window querying.
