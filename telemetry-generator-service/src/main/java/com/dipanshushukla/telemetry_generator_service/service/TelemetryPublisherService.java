@@ -1,8 +1,8 @@
 package com.dipanshushukla.telemetry_generator_service.service;
 
 import com.dipanshushukla.telemetry_generator_service.model.TelemetryEvent;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -43,7 +43,7 @@ public class TelemetryPublisherService {
             try {
                 String jsonPayload = objectMapper.writeValueAsString(event);
                 kafkaTemplate.send(topic, event.machineId(), jsonPayload);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 System.err.println("Failed to serialize event: " + e.getMessage());
             }
         }
