@@ -105,6 +105,26 @@
                 display: flex;
                 justify-content: space-between;
             }
+            .offline-text {
+                color: #64748b;
+            }
+
+            .chart-container {
+                height: 160px;
+                margin-bottom: 20px;
+                position: relative;
+            }
+            .chart-title {
+                position: absolute;
+                top: 0;
+                left: 10px;
+                margin: 0;
+                font-size: 0.85em;
+                color: #a1a1aa;
+                font-weight: 600;
+                text-transform: uppercase;
+                z-index: 10;
+            }
         </style>
     </head>
     <body>
@@ -125,8 +145,8 @@
 
             <div class="grid">
                 <div class="card">
-                    <h2>System Ingestion Performance</h2>
-                    <div style="display: flex; gap: 40px; margin-bottom: 15px">
+                    <h2>Live Telemetry Streams & Ingestion</h2>
+                    <div style="display: flex; gap: 40px; margin-bottom: 25px">
                         <div>
                             <div class="metric-value" id="ingressRate">0</div>
                             <div style="color: #a1a1aa; font-size: 0.9em">
@@ -146,8 +166,24 @@
                             </div>
                         </div>
                     </div>
-                    <div style="height: 300px">
-                        <canvas id="telemetryChart"></canvas>
+
+                    <div class="chart-container">
+                        <h3 class="chart-title" style="color: #ef4444">
+                            Thermal Loop (°K) - Limit: 355°K
+                        </h3>
+                        <canvas id="thermalChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3 class="chart-title" style="color: #3b82f6">
+                            Energy Core (kW) - Limit: 1220kW
+                        </h3>
+                        <canvas id="energyChart"></canvas>
+                    </div>
+                    <div class="chart-container" style="margin-bottom: 0">
+                        <h3 class="chart-title" style="color: #eab308">
+                            Safety Pressure (kPa) - Limit: 153kPa
+                        </h3>
+                        <canvas id="safetyChart"></canvas>
                     </div>
                 </div>
 
@@ -191,39 +227,48 @@
             let hostUrl = window.location.origin;
             document.getElementById("serverUrl").value = hostUrl;
 
-            let chart;
-            const maxDataPoints = 20;
+            let chartThermal, chartEnergy, chartSafety;
+            const maxDataPoints = 30;
             const chartLabels = [];
+
+            // Sensor Arrays
             const thermalData = [];
             const energyData = [];
             const safetyData = [];
 
-            function setupChart() {
-                const ctx = document
-                    .getElementById("telemetryChart")
-                    .getContext("2d");
-                chart = new Chart(ctx, {
+            // Static Threshold Target Arrays
+            const thermalLimitData = [];
+            const energyLimitData = [];
+            const safetyLimitData = [];
+
+            // Core safety bounds mapped directly from our Java service rules
+            const THERMAL_THRESHOLD = 355.0;
+            const ENERGY_THRESHOLD = 1220.0;
+            const SAFETY_THRESHOLD = 153.0;
+
+            function createChart(ctxId, dataArray, limitArray, colorHex) {
+                const ctx = document.getElementById(ctxId).getContext("2d");
+                return new Chart(ctx, {
                     type: "line",
                     data: {
                         labels: chartLabels,
                         datasets: [
                             {
-                                label: "Thermal Loop °K",
-                                data: thermalData,
+                                data: dataArray,
+                                borderColor: colorHex,
+                                borderWidth: 2,
+                                backgroundColor: colorHex + "15",
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 0,
+                            },
+                            {
+                                data: limitArray,
                                 borderColor: "#ef4444",
-                                tension: 0.2,
-                            },
-                            {
-                                label: "Energy Core kW",
-                                data: energyData,
-                                borderColor: "#3b82f6",
-                                tension: 0.2,
-                            },
-                            {
-                                label: "Safety Pressure kPa",
-                                data: safetyData,
-                                borderColor: "#eab308",
-                                tension: 0.2,
+                                borderWidth: 1.5,
+                                borderDash: [6, 6], // Renders line cleanly as dashed
+                                fill: false,
+                                pointRadius: 0,
                             },
                         ],
                     },
@@ -231,12 +276,38 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         animation: { duration: 0 },
+                        plugins: { legend: { display: false } },
+                        layout: { padding: { top: 25 } },
                         scales: {
-                            x: { grid: { color: "#27272a" } },
-                            y: { grid: { color: "#27272a" } },
+                            x: { display: false },
+                            y: {
+                                grid: { color: "#27272a" },
+                                beginAtZero: false, // Prevents the chart scaling drop out bug
+                            },
                         },
                     },
                 });
+            }
+
+            function setupCharts() {
+                chartThermal = createChart(
+                    "thermalChart",
+                    thermalData,
+                    thermalLimitData,
+                    "#ef4444",
+                );
+                chartEnergy = createChart(
+                    "energyChart",
+                    energyData,
+                    energyLimitData,
+                    "#3b82f6",
+                );
+                chartSafety = createChart(
+                    "safetyChart",
+                    safetyData,
+                    safetyLimitData,
+                    "#eab308",
+                );
             }
 
             function initializeMonitoring() {
@@ -247,7 +318,6 @@
 
             async function fetchData() {
                 try {
-                    // Concurrent fetching for high-performance dashboarding
                     const [metricsRes, anomaliesRes] = await Promise.all([
                         fetch(`${hostUrl}/api/telemetry/cluster-metrics`),
                         fetch(`${hostUrl}/api/telemetry/recent-anomalies`),
@@ -255,52 +325,88 @@
 
                     if (metricsRes.ok) {
                         const metrics = await metricsRes.json();
+                        const nowMs = Date.now();
 
-                        // Update Redis-backed metrics
                         document.getElementById("ingressRate").innerText =
                             metrics.eventsPerSecond.toLocaleString();
-                        document.getElementById(
-                            "activeMachineCount",
-                        ).innerText = metrics.activeAssetCount.toLocaleString();
 
+                        // --- Fleet Heartbeat Monitor ---
                         const machineListHtml =
                             document.getElementById("machineList");
                         machineListHtml.innerHTML = "";
+                        let activeCount = 0;
+
                         if (
                             metrics.monitoredAssets &&
-                            metrics.monitoredAssets.length > 0
+                            Object.keys(metrics.monitoredAssets).length > 0
                         ) {
-                            metrics.monitoredAssets.forEach((m) => {
-                                machineListHtml.innerHTML += `<li><span>${m}</span><span style="color: #10b981;">● Online</span></li>`;
-                            });
+                            for (const [
+                                machineId,
+                                timestampStr,
+                            ] of Object.entries(metrics.monitoredAssets)) {
+                                const lastSeen = parseInt(timestampStr);
+                                const isOnline = nowMs - lastSeen < 10000;
+
+                                if (isOnline) {
+                                    activeCount++;
+                                    machineListHtml.innerHTML += `<li><span>${machineId}</span><span style="color: #10b981;">● Online</span></li>`;
+                                } else {
+                                    machineListHtml.innerHTML += `<li><span class="offline-text">${machineId}</span><span style="color: #ef4444;">○ Offline</span></li>`;
+                                }
+                            }
                         } else {
                             machineListHtml.innerHTML =
                                 '<li style="color: #a1a1aa;">No active streams detected.</li>';
                         }
+                        document.getElementById(
+                            "activeMachineCount",
+                        ).innerText = activeCount.toLocaleString();
+
+                        // --- Dynamic Baseline Holding Logic ---
+                        let currentThermal = metrics.liveThermal || 350.0;
+                        let currentEnergy = metrics.liveEnergy || 1200.0;
+                        let currentSafety = metrics.liveSafety || 150.0;
+
+                        // If the system is active but returns 0 temporarily, maintain target base metrics
+                        // instead of pushing literal 0.0 to fix initial and idle scaling distortions.
+                        if (metrics.liveThermal === 0) currentThermal = 350.0;
+                        if (metrics.liveEnergy === 0) currentEnergy = 1200.0;
+                        if (metrics.liveSafety === 0) currentSafety = 150.0;
+
+                        const timeLabel = new Date().toLocaleTimeString();
+                        if (chartLabels.length >= maxDataPoints) {
+                            chartLabels.shift();
+                            thermalData.shift();
+                            energyData.shift();
+                            safetyData.shift();
+                            thermalLimitData.shift();
+                            energyLimitData.shift();
+                            safetyLimitData.shift();
+                        }
+
+                        chartLabels.push(timeLabel);
+
+                        // Append sensor entries
+                        thermalData.push(currentThermal);
+                        energyData.push(currentEnergy);
+                        safetyData.push(currentSafety);
+
+                        // Append horizontal line constants
+                        thermalLimitData.push(THERMAL_THRESHOLD);
+                        energyLimitData.push(ENERGY_THRESHOLD);
+                        safetyLimitData.push(SAFETY_THRESHOLD);
+
+                        chartThermal.update();
+                        chartEnergy.update();
+                        chartSafety.update();
                     }
 
                     if (anomaliesRes.ok) {
                         const records = await anomaliesRes.json();
-
-                        // Update PostgreSQL-backed fault table
                         const tbody = document.getElementById("faultTableBody");
                         tbody.innerHTML = "";
 
-                        let lastThermal = 350,
-                            lastEnergy = 1200,
-                            lastSafety = 150;
-
-                        records.forEach((record, index) => {
-                            // Grab latest numbers to update the chart lines
-                            if (index === 0) {
-                                if (record.temperature)
-                                    lastThermal = record.temperature;
-                                if (record.powerDraw)
-                                    lastEnergy = record.powerDraw;
-                                if (record.pressure)
-                                    lastSafety = record.pressure;
-                            }
-
+                        records.forEach((record) => {
                             const row = document.createElement("tr");
                             const badgeClass = record.anomalyType.includes(
                                 "CRITICAL",
@@ -316,36 +422,22 @@
                                     : "N/A";
 
                             row.innerHTML = `
-                        <td>${new Date(record.timestamp).toLocaleTimeString()}</td>
-                        <td><strong>${record.machineId}</strong></td>
-                        <td>${record.scenario}</td>
-                        <td><span class="badge ${badgeClass}">${record.anomalyType}</span></td>
-                        <td>${triggerVal}</td>
-                    `;
+                                <td>${new Date(record.timestamp).toLocaleTimeString()}</td>
+                                <td><strong>${record.machineId}</strong></td>
+                                <td>${record.scenario}</td>
+                                <td><span class="badge ${badgeClass}">${record.anomalyType}</span></td>
+                                <td>${triggerVal}</td>
+                            `;
                             tbody.appendChild(row);
                         });
-
-                        // Update Chart
-                        const now = new Date().toLocaleTimeString();
-                        if (chartLabels.length >= maxDataPoints) {
-                            chartLabels.shift();
-                            thermalData.shift();
-                            energyData.shift();
-                            safetyData.shift();
-                        }
-                        chartLabels.push(now);
-                        thermalData.push(lastThermal);
-                        energyData.push(lastEnergy);
-                        safetyData.push(lastSafety);
-                        chart.update();
                     }
                 } catch (err) {
                     console.error("Dashboard connection fault:", err);
                 }
             }
 
-            setupChart();
-            setInterval(fetchData, 1000); // Poll every second for live feel
+            setupCharts();
+            setInterval(fetchData, 1000);
         </script>
     </body>
 </html>

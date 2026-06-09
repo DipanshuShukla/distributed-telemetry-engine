@@ -22,7 +22,7 @@ public class TelemetryMetricsService {
         long nowMs = Instant.now().toEpochMilli();
         long threeSecondsAgo = nowMs - 3000; // 3-second window
 
-        // 1. Fetch only the items that fall within our active 3-second window
+        // 1. Calculate Throughput
         Set<String> rollingSamples = redisTemplate.opsForZSet().rangeByScore(
                 "metrics:throughput:zset",
                 threeSecondsAgo,
@@ -31,24 +31,28 @@ public class TelemetryMetricsService {
         long totalEventsInWindow = 0;
         if (rollingSamples != null) {
             for (String sample : rollingSamples) {
-                // Parse out the batch size from the "timestamp:batchSize" string format
                 String[] parts = sample.split(":");
                 if (parts.length == 2) {
                     totalEventsInWindow += Long.parseLong(parts[1]);
                 }
             }
         }
-
-        // Calculate exact average events per second across the 3-second span
         long preciseThroughputPerSecond = totalEventsInWindow / 3;
 
-        // 2. Fetch active machine assets
-        Set<Object> activeMachines = redisTemplate.opsForHash().keys("fleet:active-machines");
+        // 2. Fetch active machine assets and their last seen timestamps
+        Map<Object, Object> machinesMap = redisTemplate.opsForHash().entries("fleet:active-machines");
+
+        // 3. Fetch latest live chart snapshots
+        String liveThermal = redisTemplate.opsForValue().get("live:thermal");
+        String liveEnergy = redisTemplate.opsForValue().get("live:energy");
+        String liveSafety = redisTemplate.opsForValue().get("live:safety");
 
         return Map.of(
                 "eventsPerSecond", preciseThroughputPerSecond,
-                "activeAssetCount", activeMachines.size(),
-                "monitoredAssets", activeMachines);
+                "monitoredAssets", machinesMap,
+                "liveThermal", liveThermal != null ? Double.parseDouble(liveThermal) : 0.0,
+                "liveEnergy", liveEnergy != null ? Double.parseDouble(liveEnergy) : 0.0,
+                "liveSafety", liveSafety != null ? Double.parseDouble(liveSafety) : 0.0);
     }
 
     public List<TelemetryRecord> getRecentAnomalies() {
