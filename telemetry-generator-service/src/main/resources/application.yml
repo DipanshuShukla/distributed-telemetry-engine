@@ -14,3 +14,4 @@ app:
     topic: raw-telemetry
   telemetry:
     events-per-tick: ${EVENTS_PER_TICK:50}
+    anomaly_rate: ${ANOMALY_RATE:60}

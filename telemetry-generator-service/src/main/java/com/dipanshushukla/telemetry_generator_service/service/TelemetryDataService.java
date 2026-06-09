@@ -2,6 +2,8 @@ package com.dipanshushukla.telemetry_generator_service.service;
 
 import com.dipanshushukla.telemetry_generator_service.model.TelemetryEvent;
 import jakarta.annotation.PostConstruct;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,9 @@ public class TelemetryDataService {
 
     private final List<String[]> baselines = new ArrayList<>();
     private final Random random = new Random();
+
+    @Value("${app.telemetry.anomaly_rate}")
+    private int anomalyRate;
 
     @PostConstruct
     public void loadBaselines() {
@@ -38,8 +43,8 @@ public class TelemetryDataService {
 
         String[] base = baselines.get(random.nextInt(baselines.size()));
 
-        // 0.2% chance to trigger an anomaly (approx. 100 out of every 1000 events)
-        boolean isAnomalySpike = random.nextDouble() < 0.050;
+        // anomaly rate per 1000 events
+        boolean isAnomalySpike = random.nextDouble() < (this.anomalyRate / 1000d);
 
         return new TelemetryEvent(
                 base[0], // machineId

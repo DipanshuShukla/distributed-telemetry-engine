@@ -8,5 +8,10 @@
     "name": "app.telemetry.events-per-tick",
     "type": "java.lang.Integer",
     "description": "Number of events to be published per tick."
+  },
+  {
+    "name": "app.telemetry.anomaly_rate",
+    "type": "java.lang.Integer",
+    "description": "Number of anomalies to be published per 1000 events."
   }
 ]}
