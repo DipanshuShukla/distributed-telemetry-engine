@@ -16,8 +16,8 @@ The system is decoupled into discrete microservices communicating via an Apache 
 
 ## 🛠️ Technology Stack
 
-* **Core Backend:** Java 27, Spring Boot 3.2, Spring Data JPA, Spring Kafka
-* **Message Broker:** Apache Kafka 3.6 (KRaft Mode - ZooKeeper-less)
+* **Core Backend:** Java 26, Spring Boot 4.0.6, Spring Data JPA, Spring Kafka
+* **Message Broker:** Apache Kafka (KRaft Mode - ZooKeeper-less)
 * **High-Speed Cache & State:** Redis 7 (ZSets and Hashes)
 * **Relational Storage:** PostgreSQL 15
 * **Orchestration:** Docker & Docker Compose V2

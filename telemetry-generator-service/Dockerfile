@@ -18,4 +18,4 @@ WORKDIR /app
 # Copy ONLY the compiled .jar from the builder stage
 COPY --from=builder /app/target/*.jar app.jar
 
-ENTRYPOINT ["java", "-jar", "app.jar"]%      
+ENTRYPOINT ["java", "-jar", "app.jar"]
