@@ -8,7 +8,14 @@ spring:
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
-  
+
+  # Spring Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:2}
+      timeout: 2000
   jpa:
     hibernate:
       ddl-auto: update # Automatically creates the table structure for development
@@ -29,7 +36,8 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       max-poll-records: 500 # How many messages to grab in a single batch
     listener:
-      type: batch # Instructs Spring to pass a List<ConsumerRecord> to the listener
+      type: batch
+      concurrency: 3
 
   # Enable Java 21 Virtual Threads
   threads:

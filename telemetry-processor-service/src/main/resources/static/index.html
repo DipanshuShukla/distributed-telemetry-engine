@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ENGINPILOT | Industrial Control Center</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <style>
+            body {
+                font-family: "Segoe UI", sans-serif;
+                background-color: #0c0c0e;
+                color: #e2e8f0;
+                margin: 0;
+                padding: 20px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 2fr 1fr;
+                gap: 20px;
+                max-width: 1400px;
+                margin: 0 auto;
+            }
+            .card {
+                background-color: #141417;
+                border: 1px solid #27272a;
+                padding: 20px;
+                border-radius: 8px;
+            }
+            .full-width {
+                grid-column: 1 / -1;
+            }
+            h2 {
+                color: #10b981;
+                margin-top: 0;
+                display: flex;
+                justify-content: space-between;
+            }
+            .metric-value {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #3b82f6;
+            }
+            .config-bar {
+                margin-bottom: 20px;
+                display: flex;
+                gap: 10px;
+                background-color: #141417;
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid #27272a;
+            }
+            input,
+            button {
+                padding: 8px 12px;
+                background: #27272a;
+                border: 1px solid #3f3f46;
+                color: white;
+                border-radius: 4px;
+            }
+            button {
+                background: #10b981;
+                cursor: pointer;
+                border: none;
+                font-weight: bold;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            th,
+            td {
+                padding: 10px;
+                text-align: left;
+                border-bottom: 1px solid #27272a;
+            }
+            th {
+                background-color: #1f1f23;
+                color: #a1a1aa;
+            }
+            .badge {
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 0.8em;
+                font-weight: bold;
+            }
+            .critical {
+                background: #7f1d1d;
+                color: #fecaca;
+            }
+            .warning {
+                background: #78350f;
+                color: #fef3c7;
+            }
+            ul {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                height: 350px;
+                overflow-y: auto;
+            }
+            li {
+                padding: 8px;
+                border-bottom: 1px solid #27272a;
+                display: flex;
+                justify-content: space-between;
+            }
+        </style>
+    </head>
+    <body>
+        <div style="max-width: 1400px; margin: 0 auto">
+            <h1>Industrial Intelligence Platform</h1>
+
+            <div class="config-bar">
+                <label style="line-height: 2.3">Target Backend Engine:</label>
+                <input
+                    type="text"
+                    id="serverUrl"
+                    value=""
+                    style="width: 300px"
+                    placeholder="Detecting automatically..."
+                />
+                <button onclick="initializeMonitoring()">Connect</button>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <h2>System Ingestion Performance</h2>
+                    <div style="display: flex; gap: 40px; margin-bottom: 15px">
+                        <div>
+                            <div class="metric-value" id="ingressRate">0</div>
+                            <div style="color: #a1a1aa; font-size: 0.9em">
+                                Cluster Events / Sec
+                            </div>
+                        </div>
+                        <div>
+                            <div
+                                class="metric-value"
+                                style="color: #10b981"
+                                id="activeMachineCount"
+                            >
+                                0
+                            </div>
+                            <div style="color: #a1a1aa; font-size: 0.9em">
+                                Active Monitored Assets
+                            </div>
+                        </div>
+                    </div>
+                    <div style="height: 300px">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Monitored Fleet Status</h2>
+                    <ul id="machineList">
+                        <li style="color: #a1a1aa">
+                            Awaiting data stream connectivity...
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="card full-width">
+                    <h2>Real-time Safety & Fault Logs</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Asset Identifier</th>
+                                <th>Domain Class</th>
+                                <th>AI Inference Classification</th>
+                                <th>Trigger State Metrics</th>
+                            </tr>
+                        </thead>
+                        <tbody id="faultTableBody">
+                            <tr>
+                                <td
+                                    colspan="5"
+                                    style="color: #a1a1aa; text-align: center"
+                                >
+                                    No active fault alerts found.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let hostUrl = window.location.origin;
+            document.getElementById("serverUrl").value = hostUrl;
+
+            let chart;
+            const maxDataPoints = 20;
+            const chartLabels = [];
+            const thermalData = [];
+            const energyData = [];
+            const safetyData = [];
+
+            function setupChart() {
+                const ctx = document
+                    .getElementById("telemetryChart")
+                    .getContext("2d");
+                chart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: chartLabels,
+                        datasets: [
+                            {
+                                label: "Thermal Loop °K",
+                                data: thermalData,
+                                borderColor: "#ef4444",
+                                tension: 0.2,
+                            },
+                            {
+                                label: "Energy Core kW",
+                                data: energyData,
+                                borderColor: "#3b82f6",
+                                tension: 0.2,
+                            },
+                            {
+                                label: "Safety Pressure kPa",
+                                data: safetyData,
+                                borderColor: "#eab308",
+                                tension: 0.2,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 0 },
+                        scales: {
+                            x: { grid: { color: "#27272a" } },
+                            y: { grid: { color: "#27272a" } },
+                        },
+                    },
+                });
+            }
+
+            function initializeMonitoring() {
+                hostUrl = document.getElementById("serverUrl").value;
+                if (hostUrl.endsWith("/")) hostUrl = hostUrl.slice(0, -1);
+                fetchData();
+            }
+
+            async function fetchData() {
+                try {
+                    // Concurrent fetching for high-performance dashboarding
+                    const [metricsRes, anomaliesRes] = await Promise.all([
+                        fetch(`${hostUrl}/api/telemetry/cluster-metrics`),
+                        fetch(`${hostUrl}/api/telemetry/recent-anomalies`),
+                    ]);
+
+                    if (metricsRes.ok) {
+                        const metrics = await metricsRes.json();
+
+                        // Update Redis-backed metrics
+                        document.getElementById("ingressRate").innerText =
+                            metrics.eventsPerSecond.toLocaleString();
+                        document.getElementById(
+                            "activeMachineCount",
+                        ).innerText = metrics.activeAssetCount.toLocaleString();
+
+                        const machineListHtml =
+                            document.getElementById("machineList");
+                        machineListHtml.innerHTML = "";
+                        if (
+                            metrics.monitoredAssets &&
+                            metrics.monitoredAssets.length > 0
+                        ) {
+                            metrics.monitoredAssets.forEach((m) => {
+                                machineListHtml.innerHTML += `<li><span>${m}</span><span style="color: #10b981;">● Online</span></li>`;
+                            });
+                        } else {
+                            machineListHtml.innerHTML =
+                                '<li style="color: #a1a1aa;">No active streams detected.</li>';
+                        }
+                    }
+
+                    if (anomaliesRes.ok) {
+                        const records = await anomaliesRes.json();
+
+                        // Update PostgreSQL-backed fault table
+                        const tbody = document.getElementById("faultTableBody");
+                        tbody.innerHTML = "";
+
+                        let lastThermal = 350,
+                            lastEnergy = 1200,
+                            lastSafety = 150;
+
+                        records.forEach((record, index) => {
+                            // Grab latest numbers to update the chart lines
+                            if (index === 0) {
+                                if (record.temperature)
+                                    lastThermal = record.temperature;
+                                if (record.powerDraw)
+                                    lastEnergy = record.powerDraw;
+                                if (record.pressure)
+                                    lastSafety = record.pressure;
+                            }
+
+                            const row = document.createElement("tr");
+                            const badgeClass = record.anomalyType.includes(
+                                "CRITICAL",
+                            )
+                                ? "critical"
+                                : "warning";
+                            const triggerVal = record.temperature
+                                ? record.temperature + " °K"
+                                : record.pressure
+                                  ? record.pressure + " kPa"
+                                  : record.powerDraw
+                                    ? record.powerDraw + " kW"
+                                    : "N/A";
+
+                            row.innerHTML = `
+                        <td>${new Date(record.timestamp).toLocaleTimeString()}</td>
+                        <td><strong>${record.machineId}</strong></td>
+                        <td>${record.scenario}</td>
+                        <td><span class="badge ${badgeClass}">${record.anomalyType}</span></td>
+                        <td>${triggerVal}</td>
+                    `;
+                            tbody.appendChild(row);
+                        });
+
+                        // Update Chart
+                        const now = new Date().toLocaleTimeString();
+                        if (chartLabels.length >= maxDataPoints) {
+                            chartLabels.shift();
+                            thermalData.shift();
+                            energyData.shift();
+                            safetyData.shift();
+                        }
+                        chartLabels.push(now);
+                        thermalData.push(lastThermal);
+                        energyData.push(lastEnergy);
+                        safetyData.push(lastSafety);
+                        chart.update();
+                    }
+                } catch (err) {
+                    console.error("Dashboard connection fault:", err);
+                }
+            }
+
+            setupChart();
+            setInterval(fetchData, 1000); // Poll every second for live feel
+        </script>
+    </body>
+</html>
